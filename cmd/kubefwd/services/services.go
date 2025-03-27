@@ -51,15 +51,17 @@ import (
 )
 
 // cmdline arguments
-var namespaces []string
-var contexts []string
-var verbose bool
-var domain string
-var mappings []string
-var isAllNs bool
-var fwdConfigurationPath string
-var fwdReservations []string
-var timeout int
+var (
+	namespaces           []string
+	contexts             []string
+	verbose              bool
+	domain               string
+	mappings             []string
+	isAllNs              bool
+	fwdConfigurationPath string
+	fwdReservations      []string
+	timeout              int
+)
 
 func init() {
 	// override error output from k8s.io/apimachinery/pkg/util/runtime
@@ -80,7 +82,6 @@ func init() {
 	Cmd.Flags().StringSliceVarP(&fwdReservations, "reserve", "r", []string{}, "Specify an IP reservation. Specify multiple reservations by duplicating this argument.")
 	Cmd.Flags().StringVarP(&fwdConfigurationPath, "fwd-conf", "z", "", "Define an IP reservation configuration")
 	Cmd.Flags().IntVarP(&timeout, "timeout", "t", 300, "Specify a timeout seconds for the port forwarding.")
-
 }
 
 var Cmd = &cobra.Command{
@@ -128,13 +129,15 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 
 	// Check RBAC permissions for each of the requested namespaces
 	requiredPermissions := []authorizationv1.ResourceAttributes{
-		{Verb: "list", Resource: "pods"}, {Verb: "get", Resource: "pods"}, {Verb: "watch", Resource: "pods"},
+		{Verb: "list", Resource: "pods"},
+		{Verb: "get", Resource: "pods"},
+		{Verb: "watch", Resource: "pods"},
 		{Verb: "get", Resource: "services"},
 	}
 	for _, namespace := range namespaces {
 		for _, perm := range requiredPermissions {
 			perm.Namespace = namespace
-			var accessReview = &authorizationv1.SelfSubjectAccessReview{
+			accessReview := &authorizationv1.SelfSubjectAccessReview{
 				Spec: authorizationv1.SelfSubjectAccessReviewSpec{
 					ResourceAttributes: &perm,
 				},
@@ -153,7 +156,6 @@ func checkConnection(clientSet *kubernetes.Clientset, namespaces []string) error
 }
 
 func runCmd(cmd *cobra.Command, _ []string) {
-
 	if verbose {
 		log.SetLevel(log.DebugLevel)
 	}
@@ -226,27 +228,6 @@ Try:
 	listOptions.LabelSelector = cmd.Flag("selector").Value.String()
 	listOptions.FieldSelector = cmd.Flag("field-selector").Value.String()
 
-	// if no namespaces were specified via the flags, check config from the k8s context
-	// then explicitly set one to "default"
-	if len(namespaces) < 1 {
-		namespaces = []string{"default"}
-		x := rawConfig.CurrentContext
-		// use the first context if specified
-		if len(contexts) > 0 {
-			x = contexts[0]
-		}
-
-		for ctxName, ctxConfig := range rawConfig.Contexts {
-			if ctxName == x {
-				if ctxConfig.Namespace != "" {
-					log.Printf("Using namespace %s from current context %s.", ctxConfig.Namespace, ctxName)
-					namespaces = []string{ctxConfig.Namespace}
-					break
-				}
-			}
-		}
-	}
-
 	stopListenCh := make(chan struct{})
 
 	// Listen for shutdown signal from user
@@ -283,28 +264,46 @@ Try:
 			log.Fatalf("Error creating k8s clientSet: %s\n", err.Error())
 		}
 
+		// 如果没有明确指定命名空间，则从当前 context 配置中获取默认命名空间
+		contextsNamespaces := namespaces
+		if len(namespaces) < 1 || (len(contexts) > 1 && len(namespaces) == 1 && namespaces[0] == "default") {
+			// 重新从当前 context 配置中获取命名空间
+			for ctxName, ctxConfig := range rawConfig.Contexts {
+				if ctxName == ctx {
+					if ctxConfig.Namespace != "" {
+						log.Printf("Using namespace %s from context %s.", ctxConfig.Namespace, ctxName)
+						contextsNamespaces = []string{ctxConfig.Namespace}
+						break
+					} else {
+						log.Printf("No namespace specified in context %s, using 'default'", ctxName)
+						contextsNamespaces = []string{"default"}
+					}
+				}
+			}
+		}
+
 		// if use --all-namespace ,from v1 api get all ns.
 		if isAllNs {
-			if len(namespaces) > 1 {
+			if len(contextsNamespaces) > 1 {
 				log.Fatalf("Error: cannot combine options --all-namespaces and -n.")
 			}
-			setAllNamespace(clientSet, listOptions, &namespaces)
+			setAllNamespace(clientSet, listOptions, &contextsNamespaces)
 		}
 
 		// check connectivity
-		err = checkConnection(clientSet, namespaces)
+		err = checkConnection(clientSet, contextsNamespaces)
 		if err != nil {
 			log.Fatalf("Error connecting to k8s cluster: %s\n", err.Error())
 		}
 		log.Infof("Successfully connected context: %v", ctx)
 
 		// create the k8s RESTclient
-		restClient, err := configGetter.GetRESTClient()
+		restClient, err := configGetter.GetRESTClient(ctx)
 		if err != nil {
 			log.Fatalf("Error creating k8s RestClient: %s\n", err.Error())
 		}
 
-		for ii, namespace := range namespaces {
+		for ii, namespace := range contextsNamespaces {
 			nsWatchesDone.Add(1)
 
 			nameSpaceOpts := NamespaceOpts{
@@ -327,7 +326,7 @@ Try:
 			}
 
 			go func(npo NamespaceOpts) {
-				nameSpaceOpts.watchServiceEvents(stopListenCh)
+				npo.watchServiceEvents(stopListenCh)
 				nsWatchesDone.Done()
 			}(nameSpaceOpts)
 		}

@@ -53,7 +53,8 @@ func (c *ConfigGetter) GetRestConfig(cfgFilePath string, context string) (*restc
 }
 
 // GetRestClient return the RESTClient
-func (c *ConfigGetter) GetRESTClient() (*restclient.RESTClient, error) {
+func (c *ConfigGetter) GetRESTClient(context string) (*restclient.RESTClient, error) {
+	c.ConfigFlag.Context = &context
 	matchVersionKubeConfigFlags := cmdutil.NewMatchVersionFlags(c.ConfigFlag)
 	f := cmdutil.NewFactory(matchVersionKubeConfigFlags)
 	RESTClient, err := f.RESTClient()

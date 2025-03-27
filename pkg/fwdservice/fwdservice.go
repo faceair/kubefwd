@@ -101,7 +101,6 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 	listOpts := metav1.ListOptions{LabelSelector: svcFwd.PodLabelSelector}
 
 	pods, err := svcFwd.ClientSet.CoreV1().Pods(svcFwd.Svc.Namespace).List(context.TODO(), listOpts)
-
 	if err != nil {
 		if errors.IsNotFound(err) {
 			log.Warnf("WARNING: No Pods found for service %s: %s\n", svcFwd, err.Error())
@@ -127,7 +126,6 @@ func (svcFwd *ServiceFWD) GetPodsForService() []v1.Pod {
 // that are no longer returned by k8s, should these not be correctly deleted.
 func (svcFwd *ServiceFWD) SyncPodForwards(force bool) {
 	sync := func() {
-
 		defer func() { svcFwd.LastSyncedAt = time.Now() }()
 
 		k8sPods := svcFwd.GetPodsForService()
@@ -264,9 +262,7 @@ func (svcFwd *ServiceFWD) LoopPodsToForward(pods []v1.Pod, includePodNameInHost 
 
 		// if this is not the first cluster append the full
 		// host name
-		if svcFwd.ClusterN > 0 {
-			serviceHostName = serviceHostName + "." + svcFwd.Context
-		}
+		serviceHostName = serviceHostName + "." + svcFwd.Context
 
 		for _, port := range svcFwd.Svc.Spec.Ports {
 
@@ -403,7 +399,7 @@ func (svcFwd *ServiceFWD) getPortMap(port int32) string {
 	if svcFwd.PortMap != nil {
 		for _, portMapInfo := range *svcFwd.PortMap {
 			if p == portMapInfo.SourcePort {
-				//use map port
+				// use map port
 				return portMapInfo.TargetPort
 			}
 		}
